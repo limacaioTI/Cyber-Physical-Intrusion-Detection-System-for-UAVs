@@ -81,6 +81,5 @@ TCC/
 
 ## Autoria
 
-**Autor:** [Seu Nome]  
-**Orientador(a):** [Nome do orientador]  
-**Instituição:** [Nome da instituição] — Trabalho de Conclusão de Curso (TCC)
+**Autor:** Caio de Souza Lima
+**Instituição:** Universidade Federal Fluminense — Trabalho de Conclusão de Curso (TCC)
