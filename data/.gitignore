@@ -1,3 +1,22 @@
+# Dados
+data/UAVAttackData/
+
+# Arquivos de datasets
 *.csv
 *.npy
 *.pcap
+*.ulg
+*.tlog
+
+# Ambiente virtual
+.venv/
+
+# Sistema (Mac)
+.DS_Store
+
+# Python (boa prática adicionar)
+__pycache__/
+*.pyc
+
+# Jupyter (opcional, mas recomendado)
+.ipynb_checkpoints/
