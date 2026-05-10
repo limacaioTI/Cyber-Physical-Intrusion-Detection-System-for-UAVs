@@ -70,7 +70,8 @@ TCC/
 │   ├── .gitignore   # Ignora *.csv, *.npy, *.pcap
 │   └── README.md    # Links e notas sobre os datasets
 ├── docs/
-│   └── resumo.md  # Resumo do notebook + ideias de análises futuras
+│   ├── resumo.md                         # Resumo método rede + ideias futuras
+│   └── objetivos-alcancados-limitacoes.md # Alinhamento README vs trabalho atual (tese)
 ├── notebooks/     # Jupyter: análise exploratória e modelo LSTM
 ├── src/
 │   └── requirements.txt
