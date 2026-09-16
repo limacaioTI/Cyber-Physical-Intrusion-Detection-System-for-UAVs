@@ -4,23 +4,45 @@ Pasta de testes do TCC: gera cenários de ataque sobre os voos do PX4-QUAD-SITL
 já existentes em `data/UAVAttackData/`, e (próximo passo) avalia os modelos
 treinados (`notebooks/.../best_model_px4.keras`) contra esses cenários.
 
+> **Importante — classes reais vs. ataques sintéticos.** O dataset
+> PX4-QUAD-SITL só tem 3 pastas de log, logo 3 classes reais de treino:
+> `Normal`, `GPS Spoofing` e `Ping DoS`. **Replay e FDI não existem como
+> classe no dataset** — não há pasta de log rotulada como tal, e o modelo
+> nunca viu esses rótulos em treino (o FDI, inclusive, é citado no
+> referencial teórico do TCC como vetor sem rótulo dedicado nos datasets
+> usados). `tests/attacks/replay_attack.py` e `tests/attacks/fdi_attack.py`
+> geram esses dois cenários **sinteticamente**, injetando o padrão de
+> ataque em cima de um voo `Normal` real — não são uma 4ª/5ª classe do
+> PX4-QUAD-SITL, são testes de generalização: avaliam como o IDS reage a um
+> ataque que ele nunca viu em treino, o que é o cenário mais realista para
+> um atacante real (que não está limitado ao repertório do seu dataset).
+> `gps_spoofing_attack.py` e `dos_attack.py`, por outro lado, geram
+> variações sintéticas de classes que **existem** no treino (GPS Spoofing e
+> Ping DoS), só variando a magnitude/forma do ataque.
+
 ## Estrutura
 
 ```
 tests/
 ├── common/
-│   └── features.py     # engenharia de features espelhando o notebook de treino
-│                        # (load_merged, add_derived_features, FEATS, WINDOW, build_windows)
+│   ├── features.py       # engenharia de features do ramo FÍSICO (PX4), espelha o notebook
+│   │                      # (load_merged, add_derived_features, FEATS, WINDOW, build_windows)
+│   └── features_cyber.py # engenharia de features do ramo CIBER (T-ITS), espelha o notebook
+│                          # (load_benign_ordered, FEATS_V2, WINDOW, build_windows)
 ├── attacks/
-│   ├── replay_attack.py       # ataque de replay sobre um voo Normal
-│   ├── gps_spoofing_attack.py # drift progressivo de GPS
-│   ├── dos_attack.py          # gaps/freeze simulando degradação do enlace
-│   └── fdi_attack.py          # injeção de dados falsos (degrau abrupto)
+│   ├── replay_attack.py         # [físico] replay sobre um voo Normal
+│   ├── gps_spoofing_attack.py   # [físico] drift progressivo de GPS
+│   ├── dos_attack.py            # [físico] gaps/freeze simulando degradação do enlace
+│   ├── fdi_attack.py            # [físico] injeção de dados falsos (degrau abrupto)
+│   ├── dos_attack_cyber.py      # [ciber] flood sintético sobre tráfego benign
+│   └── replay_attack_cyber.py   # [ciber] replay canônico sobre tráfego benign
 ├── eval/
-│   ├── evaluate_model.py       # avalia o classificador (.keras) contra um CSV de ataque
-│   ├── fit_scaler.py           # reconstrói e persiste (joblib) o scaler de referência
-│   ├── train_autoencoder.py    # treina o LSTM-Autoencoder (só voos Normal)
-│   └── evaluate_autoencoder.py # avalia o autoencoder por erro de reconstrução + threshold
+│   ├── evaluate_model.py        # [físico] avalia o classificador (.keras) contra um CSV de ataque
+│   ├── fit_scaler.py            # [físico] reconstrói e persiste (joblib) o scaler de referência
+│   ├── train_autoencoder.py     # [físico] treina o LSTM-Autoencoder (só voos Normal)
+│   ├── evaluate_autoencoder.py  # [físico] avalia o autoencoder por erro de reconstrução + threshold
+│   ├── evaluate_model_cyber.py  # [ciber] avalia o classificador (.keras) contra um CSV de ataque
+│   └── fit_scaler_cyber.py      # [ciber] reconstrói e persiste (joblib) o scaler de referência
 └── outputs/             # CSVs gerados pelos ataques (não versionados nos dados brutos)
 ```
 
@@ -166,6 +188,12 @@ generaliza nem para variações sintéticas simples do mesmo tipo de ataque.
 
 ## FDI attack (False Data Injection)
 
+> FDI **não é uma classe do dataset PX4-QUAD-SITL** — não existe pasta de
+> log real rotulada como FDI (ver aviso no topo deste README). O que
+> `fdi_attack.py` gera é inteiramente sintético: um degrau fabricado sobre
+> um voo `Normal` real, usado como teste de generalização contra um ataque
+> fora do repertório de treino — igual ao Replay.
+
 `tests/attacks/fdi_attack.py` simula manipulação direta de leituras/estados
 na camada de aplicação: diferente de replay (repete um trecho passado) e de
 spoofing (drift gradual crescente), o FDI aqui é um **degrau abrupto** —
@@ -205,13 +233,13 @@ passar despercebido.
 
 ## Síntese — os 4 vetores de ataque testados (classificador fechado)
 
-| Ataque | Visto no treino? | Taxa de deteção observada |
-|---|---|---|
-| Replay | Não (classe inexistente) | 23% (confundido majoritariamente com Normal) |
-| GPS Spoofing suave (r_xy ~255m) | Sim, mas em outra escala | 0% |
-| GPS Spoofing agressivo (r_xy ~11.900m, escala do treino) | Sim | 46,6% |
-| DoS (gaps ou freeze) | Sim | 0% |
-| FDI (degrau em eph_loc/eph_gps ou x/y) | Não (classe inexistente) | 0% |
+| Ataque | Classe real do dataset PX4? | Visto no treino? | Taxa de deteção observada |
+|---|---|---|---|
+| Replay | Não — gerado sinteticamente sobre um voo Normal | Não (rótulo inexistente) | 23% (confundido majoritariamente com Normal) |
+| GPS Spoofing suave (r_xy ~255m) | Sim (`GPS Spoofing`) | Sim, mas em outra escala | 0% |
+| GPS Spoofing agressivo (r_xy ~11.900m, escala do treino) | Sim (`GPS Spoofing`) | Sim | 46,6% |
+| DoS (gaps ou freeze) | Sim (`Ping DoS`) | Sim | 0% |
+| FDI (degrau em eph_loc/eph_gps ou x/y) | Não — gerado sinteticamente sobre um voo Normal | Não (rótulo inexistente) | 0% |
 
 Achado central: mesmo nas duas classes em que o modelo foi treinado
 diretamente (Spoofing, DoS), a deteção só funciona quando o ataque sintético
@@ -274,11 +302,118 @@ reconhecer um rótulo específico — só de o padrão se desviar do que é
   contexto temporal mais amplo (não só a janela isolada) como trabalho
   futuro adicional.
 
+---
+
+# Ramo ciber — Dataset T-ITS (MAVLink/Wi-Fi)
+
+Cobertura equivalente à do ramo físico (acima), agora para
+`best_model_cyber.keras` (LSTM, 3 classes: Benign / DoS attack / Replay,
+Dataset T-ITS).
+
+**Diferença estrutural importante.** O Dataset T-ITS é tráfego de rede
+capturado em sessões — `timestamp_c` tem saltos grandes entre blocos de
+captura (não é um único voo contínuo como o PX4). Por isso os ataques
+sintéticos do ramo ciber usam janelas por **índice de linha**
+(`--attack-start-row`/`--duration-rows`) sobre a subsequência `benign`
+ordenada por tempo, em vez de segundos decorridos.
+
+**Diferença de interpretação em relação ao ramo físico.** Aqui, `DoS attack`
+e `Replay` **são classes reais** do dataset (ao contrário do ramo físico,
+onde Replay e FDI não existem como rótulo — ver aviso no topo deste
+README). Os ataques sintéticos abaixo não testam um vetor totalmente
+desconhecido: testam **generalização de magnitude/forma** — um DoS mais
+suave ou mais agressivo que o único log real de treino, e um replay
+"canônico" (retransmissão exata de tráfego benigno, sem as
+particularidades da sessão de captura rotulada `Replay` no dataset).
+
+## DoS attack (ciber)
+
+`tests/attacks/dos_attack_cyber.py` encolhe o tamanho dos pacotes
+(`frame.len`/`ip.len`/`udp.length`/`data.len`, divididos por
+`--size-divisor`) e acelera o ritmo de captura (`time_since_last_packet`
+dividido por `--rate-multiplier`) numa janela de linhas sobre tráfego
+`benign` real — a mesma assinatura observada no log real de `DoS attack`
+(frame.len médio ~44 vs. ~127 em benign, ver `DOCUMENTO.md` §3.2/§4.2).
+
+```bash
+python -m tests.attacks.dos_attack_cyber \
+    --attack-start-row 500 --duration-rows 60 \
+    --rate-multiplier 2 --size-divisor 1.5 \
+    --out tests/outputs/dos_cyber/benign_dos_suave.csv
+
+python -m tests.attacks.dos_attack_cyber \
+    --attack-start-row 500 --duration-rows 60 \
+    --rate-multiplier 20 --size-divisor 4 \
+    --out tests/outputs/dos_cyber/benign_dos_agressivo.csv
+
+python -m tests.eval.evaluate_model_cyber \
+    --attack-csv tests/outputs/dos_cyber/benign_dos_suave.csv \
+    --scaler tests/eval/cyber_scaler.joblib
+```
+
+### Achados — DoS (ciber)
+
+| Cenário | `rate-multiplier` / `size-divisor` | frame.len médio no ataque | Taxa de deteção |
+|---|---|---|---|
+| DoS suave | 2 / 1,5 | 90,5 (benign: 127,1) | **1,4%** |
+| DoS agressivo (próximo da escala real, ~44) | 20 / 4 | 33,9 | **26,1%** |
+
+Mesmo no cenário agressivo, cuja magnitude já se aproxima do log real de
+`DoS attack`, a deteção fica bem abaixo do desempenho reportado no notebook
+para o conjunto de teste real — e, mais revelador: **nenhuma janela atacada
+foi classificada como "DoS attack"**. As 18 janelas sinalizadas (de 69) no
+cenário agressivo foram classificadas como **Replay**, não como DoS. Isso é
+o mesmo padrão de overfitting à instância já visto no ramo físico, mas
+manifestado de outra forma: o modelo não aprendeu "pacotes pequenos e
+rápidos = DoS", aprendeu a reconhecer estatisticamente a sessão de captura
+específica rotulada `DoS attack` no treino — um DoS sintético com
+características de rede plausíveis, mas gerado de outra forma, é confundido
+com a classe adjacente mais parecida (Replay), não reconhecido pelo nome
+correto.
+
+## Replay attack (ciber)
+
+`tests/attacks/replay_attack_cyber.py` grava um bloco de pacotes benignos
+(`--source-start-row`) e o retransmite mais tarde (`--attack-start-row`),
+sobrescrevendo FEATS_V2 durante `--duration-rows` linhas — um replay
+"canônico": mesma distribuição de tamanho/protocolo do tráfego legítimo, só
+fora de ordem no tempo (o único sinal que muda é `time_since_last_packet`).
+
+```bash
+python -m tests.attacks.replay_attack_cyber \
+    --source-start-row 50 --attack-start-row 500 --duration-rows 60 \
+    --out tests/outputs/replay_cyber/benign_replay.csv
+```
+
+### Achados — Replay (ciber)
+
+**0% de deteção** — as 69 janelas que tocam o trecho reinjetado foram
+100% classificadas como `Benign`. Consistente com o achado do ramo físico e
+com a nota do §3.2 do `DOCUMENTO.md`: sem contexto de sessão/nonce nas
+features, um replay de tráfego legítimo é estatisticamente quase idêntico
+ao benigno — a única pista (timing) não foi suficiente para o modelo treinado.
+
+## Síntese — ramo ciber
+
+| Ataque | Classe real do dataset T-ITS? | Testado em | Taxa de deteção |
+|---|---|---|---|
+| DoS suave | Sim (`DoS attack`), mas magnitude sintética suave | fora da escala do treino | 1,4% |
+| DoS agressivo | Sim (`DoS attack`), magnitude próxima do treino | dentro da escala do treino | 26,1% (confundido com Replay) |
+| Replay canônico | Sim (`Replay`), mas gerado sinteticamente (retransmissão literal) | variação de forma | 0% |
+
+Mesma conclusão central do ramo físico: mesmo em classes vistas em treino,
+a generalização é frágil a variações de magnitude/forma que não reproduzem
+exatamente a instância de treino — reforça, com um segundo ramo
+independente, a tese de overfitting à instância que motiva tanto discutir
+deteção de anomalia (autoencoder) quanto reconhecer isso como limitação
+central do TCC.
+
 ## Próximos passos
 
-- Cobertura equivalente de ataques sintéticos para o **ramo ciber** (Dataset
-  T-ITS/MAVLink) — hoje todo o laboratório de `tests/attacks/` cobre só o
-  ramo físico (PX4).
+- Treinar um autoencoder equivalente para o ramo ciber (mesmo espírito de
+  `tests/eval/train_autoencoder.py`, mas sobre `FEATS_V2`/`benign`) e
+  reavaliar os 3 CSVs acima por erro de reconstrução — teste direto de se a
+  vantagem observada no ramo físico se repete aqui.
 - Investigar um sinal complementar ao erro de reconstrução para o caso do
-  DoS freeze (ex.: penalizar também baixa variância/entropia da janela, não
-  só o MSE de reconstrução).
+  DoS freeze do ramo físico (ex.: penalizar também baixa variância/entropia
+  da janela, não só o MSE de reconstrução).

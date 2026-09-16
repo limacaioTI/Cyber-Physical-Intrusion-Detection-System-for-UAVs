@@ -9,19 +9,30 @@
 ## 1. Contexto — o que `tests/` já provou
 
 A pasta `tests/` não é uma suite de testes de software: é um laboratório de
-ataques sintéticos que injeta anomalias controladas sobre voos "Normal" reais
-do PX4-QUAD-SITL e mede como o modelo LSTM (3 classes: Normal / GPS Spoofing /
+ataques que injeta anomalias controladas sobre voos "Normal" reais do
+PX4-QUAD-SITL e mede como o modelo LSTM (3 classes: Normal / GPS Spoofing /
 Ping DoS) reage.
+
+**Classes reais do dataset vs. ataques sintéticos.** O PX4-QUAD-SITL só tem
+3 pastas de log — Normal, GPS Spoofing, Ping DoS — logo só 3 classes reais
+de treino. Replay e FDI **não existem** como classe no dataset (o FDI,
+inclusive, é citado no referencial teórico do próprio TCC como vetor sem
+rótulo dedicado nos datasets usados); os scripts `replay_attack.py` e
+`fdi_attack.py` geram esses dois cenários sinteticamente, injetando o padrão
+de ataque em cima de um voo Normal real. Não são uma 4ª/5ª classe do
+dataset — são testes de generalização: como o IDS reage a um ataque fora do
+repertório de treino, o cenário mais realista para um atacante que não está
+limitado ao dataset de treino do defensor.
 
 Achado central já registrado:
 
-| Ataque | Visto no treino? | Taxa de deteção |
-|---|---|---|
-| Replay | Não (classe inexistente) | 23% (confundido com Normal) |
-| GPS Spoofing suave (fora da escala do treino) | Sim, mas em outra escala | 0% |
-| GPS Spoofing agressivo (escala do treino) | Sim | 46,6% |
-| DoS (gaps ou freeze) | Sim | 0% |
-| FDI (degrau em eph_loc/eph_gps ou x/y) | Não (classe inexistente) | 0% |
+| Ataque | Classe real do dataset PX4? | Visto no treino? | Taxa de deteção |
+|---|---|---|---|
+| Replay | Não — sintético, sobre voo Normal | Não (rótulo inexistente) | 23% (confundido com Normal) |
+| GPS Spoofing suave (fora da escala do treino) | Sim (`GPS Spoofing`) | Sim, mas em outra escala | 0% |
+| GPS Spoofing agressivo (escala do treino) | Sim (`GPS Spoofing`) | Sim | 46,6% |
+| DoS (gaps ou freeze) | Sim (`Ping DoS`) | Sim | 0% |
+| FDI (degrau em eph_loc/eph_gps ou x/y) | Não — sintético, sobre voo Normal | Não (rótulo inexistente) | 0% |
 
 Conclusão do próprio README: mesmo nas classes vistas em treino, a deteção só
 funciona quando o ataque sintético reproduz de perto a magnitude do único log
@@ -58,16 +69,27 @@ python -m tests.eval.fit_scaler --out tests/eval/px4_scaler.joblib
 python -m tests.eval.evaluate_model --attack-csv <csv> --scaler tests/eval/px4_scaler.joblib
 ```
 
-### 2.3 Cobertura equivalente para o ramo ciber (prioridade média)
+### 2.3 Cobertura equivalente para o ramo ciber — ✅ implementado
 
-Todo o laboratório de ataques sintéticos hoje cobre só o **ramo físico**
-(PX4-QUAD-SITL). O ramo ciber (Dataset T-ITS, MAVLink/Wi-Fi) não tem
-equivalente — não há script que gere DoS/Replay sintéticos sobre tráfego de
-rede real e avalie o LSTM do ramo ciber contra eles. Sem isso, a análise de
-generalização do TCC fica assimétrica: temos evidência de overfitting à
-instância só de um dos dois ramos. Vale ao menos um `dos_attack_ciber.py`
-(inundação de pacotes sintética sobre uma captura T-ITS benigna) para
-equilibrar a análise.
+`tests/common/features_cyber.py`, `tests/attacks/dos_attack_cyber.py`,
+`tests/attacks/replay_attack_cyber.py`, `tests/eval/fit_scaler_cyber.py` e
+`tests/eval/evaluate_model_cyber.py` replicam, para o ramo ciber (Dataset
+T-ITS, `best_model_cyber.keras`), o mesmo laboratório já existente no ramo
+físico. Diferença de interpretação: no T-ITS, DoS e Replay **são classes
+reais** de treino (ao contrário do ramo físico), então os testes aqui medem
+generalização de magnitude/forma, não um vetor totalmente desconhecido.
+Resultado (detalhes completos em `tests/README.md`):
+
+| Ataque | Taxa de deteção |
+|---|---|
+| DoS suave (fora da escala do treino) | 1,4% |
+| DoS agressivo (escala do treino) | 26,1% — e nenhuma janela reconhecida como "DoS attack": as sinalizadas foram confundidas com Replay |
+| Replay canônico (retransmissão literal de benign) | 0% |
+
+Confirma, com um segundo ramo independente, a mesma tese de overfitting à
+instância já documentada no ramo físico — o modelo do ramo ciber também não
+generaliza para variações do padrão de ataque fora da instância exata de
+treino.
 
 ### 2.4 Harness de avaliação para o autoencoder (prioridade alta, depende da seção 3)
 
@@ -172,4 +194,5 @@ bem — é o vetor mais difícil para as duas abordagens). Detalhes completos em
 | Persistir `StandardScaler` do treino | Média | ✅ Implementado (`tests/eval/fit_scaler.py`) |
 | `fdi_attack.py` | Média | ✅ Implementado (`tests/attacks/fdi_attack.py`) |
 | Investigar sinal complementar ao MSE para o caso DoS freeze | Média/baixa | Pendente |
-| Ataques sintéticos para o ramo ciber (T-ITS) | Média/baixa | Pendente |
+| Ataques sintéticos para o ramo ciber (T-ITS) | Média/baixa | ✅ Implementado (`tests/attacks/*_cyber.py`, `tests/eval/*_cyber.py`) |
+| Autoencoder para o ramo ciber | Baixa | Pendente (opcional, fora do escopo desta rodada) |
