@@ -119,27 +119,31 @@ O autoencoder reaproveita quase toda a infraestrutura já construída:
 
 O ganho mais concreto do autoencoder para a narrativa do TCC é poder ser
 testado exatamente contra os mesmos CSVs sintéticos já gerados em
-`tests/outputs/` (replay, GPS spoofing suave e agressivo, DoS gaps/freeze,
-FDI eph e FDI posição), usando a mesma lógica de "taxa de deteção durante o
-ataque vs. taxa de falso alarme fora dele" já implementada em
-`evaluate_model.py` — só troca a fonte da predição (erro de reconstrução >
-threshold, em vez de argmax ≠ Normal). Isso permite montar diretamente uma
-tabela comparativa classificador vs. autoencoder:
+`tests/outputs/`, usando a mesma lógica de "taxa de deteção durante o ataque
+vs. taxa de falso alarme fora dele" já implementada em `evaluate_model.py` —
+só troca a fonte da predição (erro de reconstrução > threshold, em vez de
+argmax ≠ Normal). **Implementado e medido** (`tests/eval/train_autoencoder.py`
++ `tests/eval/evaluate_autoencoder.py`, arquivos novos, não sobrescreveram
+nada existente):
 
-| Ataque | Deteção — LSTM classificador (softmax) | Deteção — Autoencoder (esperado) |
+| Ataque | Deteção — LSTM classificador (softmax) | Deteção — Autoencoder |
 |---|---|---|
-| Replay | 23% | a medir |
-| GPS Spoofing suave | 0% | a medir |
-| GPS Spoofing agressivo | 46,6% | a medir |
-| DoS | 0% | a medir |
-| FDI | 0% | a medir |
+| Replay | 23% | 9% |
+| GPS Spoofing suave | 0% | **95,4%** |
+| DoS (freeze) | 0% | 0% |
+| FDI | 0% | **100%** |
 
-Essa tabela é a peça central de evidência experimental que falta no TCC: se
-o autoencoder detectar melhor o Replay (classe nunca vista) e o spoofing
-suave (fora da escala de treino), isso confirma empiricamente a tese de que
+Confirma empiricamente a tese central do TCC: nos dois vetores fora do
+repertório de treino do classificador (spoofing fora de escala, FDI), a
+deteção por erro de reconstrução resolve quase completamente o problema —
 deteção de anomalia não-supervisionada generaliza melhor que classificação
-fechada para ataques desconhecidos ou de magnitude variável — a limitação
-central já identificada em `tests/README.md`.
+fechada para ataques desconhecidos ou de magnitude variável. Dois achados
+negativos, também citáveis: o DoS freeze permanece em 0% nos dois modelos
+(o modo *freeze* reduz variância em vez de aumentá-la, então o erro de
+reconstrução cai abaixo da média em vez de subir); e o Replay piorou de 23%
+para 9% no autoencoder (o trecho replayado é telemetria real, reconstrói
+bem — é o vetor mais difícil para as duas abordagens). Detalhes completos em
+`tests/README.md`.
 
 ### 3.4 Passos de implementação sugeridos
 
@@ -163,8 +167,9 @@ central já identificada em `tests/README.md`.
 
 | Item | Prioridade | Status |
 |---|---|---|
-| Treinar autoencoder LSTM | Alta | Pendente |
-| Harness de avaliação por erro de reconstrução | Alta | Pendente (depende do autoencoder treinado) |
+| Treinar autoencoder LSTM | Alta | ✅ Implementado (`tests/eval/train_autoencoder.py`) |
+| Harness de avaliação por erro de reconstrução | Alta | ✅ Implementado (`tests/eval/evaluate_autoencoder.py`) |
 | Persistir `StandardScaler` do treino | Média | ✅ Implementado (`tests/eval/fit_scaler.py`) |
 | `fdi_attack.py` | Média | ✅ Implementado (`tests/attacks/fdi_attack.py`) |
+| Investigar sinal complementar ao MSE para o caso DoS freeze | Média/baixa | Pendente |
 | Ataques sintéticos para o ramo ciber (T-ITS) | Média/baixa | Pendente |

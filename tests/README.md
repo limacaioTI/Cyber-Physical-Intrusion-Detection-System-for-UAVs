@@ -17,8 +17,10 @@ tests/
 │   ├── dos_attack.py          # gaps/freeze simulando degradação do enlace
 │   └── fdi_attack.py          # injeção de dados falsos (degrau abrupto)
 ├── eval/
-│   ├── evaluate_model.py # avalia um .keras treinado contra um CSV de ataque
-│   └── fit_scaler.py     # reconstrói e persiste (joblib) o scaler de referência
+│   ├── evaluate_model.py       # avalia o classificador (.keras) contra um CSV de ataque
+│   ├── fit_scaler.py           # reconstrói e persiste (joblib) o scaler de referência
+│   ├── train_autoencoder.py    # treina o LSTM-Autoencoder (só voos Normal)
+│   └── evaluate_autoencoder.py # avalia o autoencoder por erro de reconstrução + threshold
 └── outputs/             # CSVs gerados pelos ataques (não versionados nos dados brutos)
 ```
 
@@ -201,7 +203,7 @@ Replay: sem um mecanismo de "não sei" (classificação aberta ou deteção de
 anomalia), qualquer vetor de ataque fora do repertório de treino tende a
 passar despercebido.
 
-## Síntese — os 4 vetores de ataque testados
+## Síntese — os 4 vetores de ataque testados (classificador fechado)
 
 | Ataque | Visto no treino? | Taxa de deteção observada |
 |---|---|---|
@@ -218,16 +220,65 @@ os dois vetores fora do repertório de treino (Replay, FDI), a deteção é nula
 ou quase nula. Isso é evidência de **overfitting à instância** (um log por
 classe, não ao fenômeno) e de que um classificador fechado não generaliza
 para ataques não vistos — o achado mais forte para a seção de
-limitações/trabalhos futuros do TCC, e a motivação direta para testar uma
-abordagem de deteção de anomalia (autoencoder) no lugar da classificação
-fechada atual.
+limitações/trabalhos futuros do TCC, e a motivação direta para a proposta do
+autoencoder (abaixo).
+
+## Autoencoder (LSTM) — deteção de anomalia sem rótulo de ataque
+
+`tests/eval/train_autoencoder.py` treina um LSTM-Autoencoder **só com
+janelas do voo Normal** (80% inicial em treino, 20% final em validação,
+split sequencial — sem embaralhar, respeita a ordem temporal). A decisão de
+anomalia não usa softmax/argmax: compara o erro de reconstrução (MSE) de
+cada janela contra um threshold calibrado como o percentil 95 do erro nas
+janelas de validação (Normal, não vistas em treino).
+
+```bash
+python -m tests.eval.train_autoencoder \
+    --out-model tests/eval/autoencoder_px4.keras \
+    --out-threshold tests/eval/autoencoder_px4_threshold.json
+
+python -m tests.eval.evaluate_autoencoder \
+    --attack-csv tests/outputs/replay/normal_replay.csv \
+    --model tests/eval/autoencoder_px4.keras \
+    --threshold-file tests/eval/autoencoder_px4_threshold.json
+```
+
+### Achados — autoencoder vs. classificador fechado, mesmos 4 ataques
+
+| Ataque | Classificador fechado (softmax) | Autoencoder (erro de reconstrução) |
+|---|---|---|
+| Replay | 23% | 9% |
+| GPS Spoofing suave (fora da escala do treino) | 0% | **95,4%** |
+| DoS (freeze) | 0% | 0% |
+| FDI (eph_loc/eph_gps ×50) | 0% | **100%** |
+
+(Falso alarme do autoencoder: 1,0% fora do ataque, contra 4,4% do
+classificador — também menor.)
+
+Confirma a hipótese central do trabalho: nos dois vetores onde o
+classificador fechado falhava por a magnitude do ataque estar fora do que
+foi visto em treino (spoofing suave) ou por ser uma classe inexistente
+(FDI), o autoencoder detecta quase perfeitamente, porque não depende de
+reconhecer um rótulo específico — só de o padrão se desviar do que é
+"Normal". Dois achados negativos também são relevantes e citáveis:
+
+- **DoS freeze continua em 0%.** O modo `freeze` reduz a variância dos dados
+  (congela valores num platô constante) em vez de aumentá-la — o erro de
+  reconstrução cai abaixo da média do voo Normal (0,05 vs. 0,34) em vez de
+  subir. O autoencoder aprendeu a penalizar desvio, não "baixa variância";
+  um ataque que torna o sinal mais "liso" que o normal escapa da deteção por
+  erro de reconstrução simples.
+- **Replay caiu de 23% para 9%.** Esperado: o trecho replayado é telemetria
+  real (só fora de ordem no tempo), então reconstrói bem — é o vetor mais
+  difícil para as duas abordagens, e motiva citar deteção baseada em
+  contexto temporal mais amplo (não só a janela isolada) como trabalho
+  futuro adicional.
 
 ## Próximos passos
 
-- Treinar um autoencoder (LSTM-Autoencoder) sobre janelas de voo Normal e
-  reavaliar os 5 CSVs de ataque já gerados aqui com um harness baseado em
-  erro de reconstrução + threshold, em vez de argmax sobre 3 classes — ver
-  `docs/proximos-passos-tests-autoencoder.md`.
 - Cobertura equivalente de ataques sintéticos para o **ramo ciber** (Dataset
   T-ITS/MAVLink) — hoje todo o laboratório de `tests/attacks/` cobre só o
   ramo físico (PX4).
+- Investigar um sinal complementar ao erro de reconstrução para o caso do
+  DoS freeze (ex.: penalizar também baixa variância/entropia da janela, não
+  só o MSE de reconstrução).
