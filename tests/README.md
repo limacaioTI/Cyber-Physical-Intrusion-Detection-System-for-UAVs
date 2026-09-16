@@ -393,7 +393,7 @@ com a nota do §3.2 do `DOCUMENTO.md`: sem contexto de sessão/nonce nas
 features, um replay de tráfego legítimo é estatisticamente quase idêntico
 ao benigno — a única pista (timing) não foi suficiente para o modelo treinado.
 
-## Síntese — ramo ciber
+## Síntese — ramo ciber (classificador fechado)
 
 | Ataque | Classe real do dataset T-ITS? | Testado em | Taxa de deteção |
 |---|---|---|---|
@@ -404,16 +404,61 @@ ao benigno — a única pista (timing) não foi suficiente para o modelo treinad
 Mesma conclusão central do ramo físico: mesmo em classes vistas em treino,
 a generalização é frágil a variações de magnitude/forma que não reproduzem
 exatamente a instância de treino — reforça, com um segundo ramo
-independente, a tese de overfitting à instância que motiva tanto discutir
-deteção de anomalia (autoencoder) quanto reconhecer isso como limitação
-central do TCC.
+independente, a tese de overfitting à instância.
+
+## Autoencoder (LSTM) — ramo ciber
+
+`tests/eval/train_autoencoder_cyber.py` e `tests/eval/evaluate_autoencoder_cyber.py`
+replicam, para o ramo ciber, exatamente o experimento do autoencoder do
+ramo físico (mesma arquitetura — LSTM encoder/decoder —, mesmo threshold
+por percentil 95 do erro de reconstrução em validação, agora treinado só
+sobre `FEATS_V2`/tráfego `benign`).
+
+```bash
+python -m tests.eval.train_autoencoder_cyber \
+    --out-model tests/eval/autoencoder_cyber.keras \
+    --out-threshold tests/eval/autoencoder_cyber_threshold.json
+
+python -m tests.eval.evaluate_autoencoder_cyber \
+    --attack-csv tests/outputs/dos_cyber/benign_dos_agressivo.csv
+```
+
+### Achados — autoencoder vs. classificador fechado, ramo ciber
+
+| Ataque | Classificador fechado | Autoencoder (erro de reconstrução) |
+|---|---|---|
+| DoS suave | 1,4% | 2,9% |
+| DoS agressivo | 26,1% | **1,4%** |
+| Replay canônico | 0% | 0% |
+
+**Resultado negativo e importante de reportar com honestidade: ao contrário
+do ramo físico, o autoencoder NÃO superou o classificador no ramo ciber —
+piorou no caso mais forte (DoS agressivo).** Causa provável, análoga ao
+achado do DoS *freeze* no ramo físico: o ataque aqui **encolhe** os valores
+de tamanho de pacote (`frame.len`/`ip.len`/`udp.length`/`data.len`, ver
+`dos_attack_cyber.py`), o que — após a normalização MinMax (0–1) — empurra
+os valores para perto do limite inferior da escala, uma região mais fácil
+de reconstruir que a distribuição normal de tráfego benigno. O erro de
+reconstrução cai (0,041 e 0,025) em vez de subir, na comparação com a média
+do tráfego normal (0,044). Ou seja: um ataque que *reduz* a magnitude do
+sinal, em vez de introduzir um padrão fora da distribuição normal, tende a
+escapar da deteção por erro de reconstrução simples — o mesmo mecanismo,
+em ramos diferentes, com o mesmo efeito.
+
+**Implicação para o TCC:** a vantagem do autoencoder sobre o classificador
+fechado, forte no ramo físico (FDI e spoofing suave: de 0% para 95–100% de
+deteção), **não se generaliza automaticamente** para qualquer tipo de
+ataque ou qualquer ramo — é condicionada a que o ataque produza um desvio
+que *aumente* o erro de reconstrução (padrão fora da distribuição normal),
+não que a *reduza* (sinal mais "regular"/"pobre" que o normal, como DoS
+freeze e o DoS sintético do ramo ciber). Isso é uma limitação real e
+citável do método de threshold por MSE simples, e motiva — como já
+apontado na seção do ramo físico — investigar sinais complementares (ex.:
+variância/entropia da janela) além do erro de reconstrução puro.
 
 ## Próximos passos
 
-- Treinar um autoencoder equivalente para o ramo ciber (mesmo espírito de
-  `tests/eval/train_autoencoder.py`, mas sobre `FEATS_V2`/`benign`) e
-  reavaliar os 3 CSVs acima por erro de reconstrução — teste direto de se a
-  vantagem observada no ramo físico se repete aqui.
-- Investigar um sinal complementar ao erro de reconstrução para o caso do
-  DoS freeze do ramo físico (ex.: penalizar também baixa variância/entropia
-  da janela, não só o MSE de reconstrução).
+- Investigar um sinal complementar ao erro de reconstrução para os casos
+  onde o ataque *reduz* a magnitude do sinal em vez de aumentá-la (DoS
+  freeze no ramo físico; DoS sintético no ramo ciber) — ex.: penalizar
+  também baixa variância/entropia da janela, não só o MSE de reconstrução.

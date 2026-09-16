@@ -195,4 +195,16 @@ bem — é o vetor mais difícil para as duas abordagens). Detalhes completos em
 | `fdi_attack.py` | Média | ✅ Implementado (`tests/attacks/fdi_attack.py`) |
 | Investigar sinal complementar ao MSE para o caso DoS freeze | Média/baixa | Pendente |
 | Ataques sintéticos para o ramo ciber (T-ITS) | Média/baixa | ✅ Implementado (`tests/attacks/*_cyber.py`, `tests/eval/*_cyber.py`) |
-| Autoencoder para o ramo ciber | Baixa | Pendente (opcional, fora do escopo desta rodada) |
+| Autoencoder para o ramo ciber | Baixa | ✅ Implementado (`tests/eval/train_autoencoder_cyber.py`, `evaluate_autoencoder_cyber.py`) — resultado negativo/misto, ver `tests/README.md` |
+
+**Nota sobre o autoencoder do ramo ciber:** diferente do ramo físico (onde
+o autoencoder resolveu quase por completo FDI e spoofing suave), no ramo
+ciber ele **não superou** o classificador — piorou no DoS agressivo (26,1%
+→ 1,4%). Mesma causa do DoS *freeze* do ramo físico: o ataque sintético
+reduz a magnitude dos valores em vez de introduzir um padrão fora da
+distribuição normal, então o erro de reconstrução cai em vez de subir. É um
+achado negativo genuíno e citável — mostra que a vantagem do autoencoder
+não é universal, só se aplica quando o ataque desvia "para cima" (padrão
+mais extremo que o normal), não "para baixo" (sinal mais regular/pobre).
+Detalhes completos em `tests/README.md`, seção "Autoencoder (LSTM) — ramo
+ciber".

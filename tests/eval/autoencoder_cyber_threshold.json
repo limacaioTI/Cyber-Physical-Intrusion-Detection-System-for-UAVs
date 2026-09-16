@@ -1,0 +1,8 @@
+{
+  "threshold": 0.07924720644950867,
+  "percentile": 95.0,
+  "window": 10,
+  "val_error_mean": 0.04790305718779564,
+  "val_error_std": 0.01815318502485752,
+  "final_val_loss": 0.04878784343600273
+}
