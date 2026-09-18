@@ -64,6 +64,37 @@ Contagem de janelas-teste por classe: Normal **2 913**; GPS Spoofing **3 051
 
 *(Recomendação:* acrescentar no notebook uma **matriz de confusão** para ver se Ping DoS é confundido sobretudo com Normal.)
 
+### 2.4 Ablação do tamanho de janela (WINDOW)
+
+Espelhando a ablation já feita no ramo ciber (`Analise Dataset T-ITS/Info_Dataset_T-ITS.ipynb`,
+célula M5), foi conduzida a mesma análise para o ramo físico (célula M5 de
+`Infos_lstm_fusao_px4.ipynb`): `WINDOW ∈ {20, 30, 40, 50, 60}` para o LSTM **e** para o
+Random Forest, replicando exatamente a config do treino principal (split temporal 80/20
+**por voo/condição** — `build_windows_for_condition` —, `StandardScaler` ajustado só no
+treino, seed fixada em 42, LSTM com até 100 épocas e `EarlyStopping(patience=5,
+restore_best_weights=True)`). Diferente do ramo ciber (LSTM sem seed fixa, com variância
+real entre execuções), aqui a seed já é fixada na célula de treino principal — o resultado
+é, portanto, diretamente reprodutível.
+
+| `WINDOW` | F1 macro LSTM | F1 macro RF |
+|---|---|---|
+| 20 | 0,4524 | 0,4949 |
+| 30 | 0,4609 | 0,6798 |
+| **40** (usado no modelo principal) | **0,5324** (melhor LSTM) | 0,6741 |
+| 50 | 0,5072 | 0,6929 |
+| **60** | 0,5297 | **0,7019** (melhor RF) |
+
+**Conclusão:** `WINDOW=40` já é a **melhor janela testada para o LSTM** — valida
+empiricamente a escolha atual do hiperparâmetro, ao contrário do que se poderia temer. O
+Random Forest, por outro lado, continua melhorando com janelas maiores, atingindo o melhor
+resultado em `WINDOW=60` (0,7019, um ganho de +0,028 sobre o 0,674 do modelo principal em
+`WINDOW=40`) — o teste não foi estendido além de 60 timesteps, então não se sabe se o RF
+continuaria melhorando com janelas ainda maiores. Isso sugere, como direção de trabalho
+futuro, testar `WINDOW > 60` especificamente para o baseline RF (não necessariamente para o
+LSTM, que já teve seu pico em 40); trocar o hiperparâmetro do modelo principal exigiria
+retreinar e revalidar toda a Tabela de resultados (§2.3), o que fica fora do escopo desta
+rodada de testes.
+
 ---
 
 ## 3. Síntese transversal — o que **conseguimos identificar**

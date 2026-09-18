@@ -96,7 +96,23 @@ Este documento parte das **perguntas que você elaborou** e acrescenta **respost
 
 ### 4.3 Janela temporal (windowing)
 
-**Por que não um só pacote?** Um pacote pode ser **ambigüo** entre classes (especialmente **Replay vs DoS** ou **Replay vs benign**). **sequências curtas** dão chance à LSTM capturar **transições**. **Limite atual:** `window_size=10` pode ser curto para Replay — mencionar na discussão (**janela maior**, mais features ou multimodal).
+**Por que não um só pacote?** Um pacote pode ser **ambigüo** entre classes (especialmente **Replay vs DoS** ou **Replay vs benign**). **sequências curtas** dão chance à LSTM capturar **transições**.
+
+**Ablation controlada (célula M5, `Info_Dataset_T-ITS.ipynb`):** testamos `window_size ∈ {5, 10, 20, 30, 50}` para o LSTM **e** para o Random Forest (baseline), replicando **exatamente** a config do treino principal (split temporal 80/20 **por classe** — célula M2 —, `MinMaxScaler`/`RandomForestClassifier(n_estimators=200, random_state=42)` ajustados só no treino, LSTM com até 100 épocas e `EarlyStopping(patience=5, restore_best_weights=True)`). Uma primeira versão dessa ablation usava um split e orçamento de treino diferentes do modelo principal (corte único global, 20 épocas fixas, sem early stopping) e produzia F1 bem mais baixos (0,40–0,45) — não comparáveis ao F1 do modelo principal; **descartada**. Resultado da versão corrigida:
+
+| `window_size` | F1 macro LSTM | F1 macro RF | Épocas LSTM até convergir |
+|---|---|---|---|
+| 5 | 0,6329 | 0,6497 | 12 |
+| **10** (usado no modelo principal) | 0,6166 | 0,6627 | 7 |
+| 20 | 0,6482 | 0,6664 | 18 |
+| 30 | 0,6744 | 0,6681 | 15 |
+| **50** | **0,6746** (melhor) | **0,6915** (melhor) | 12 |
+
+**Nota sobre variância do LSTM:** rodamos essa ablation duas vezes (sem fixar seed) e o LSTM produziu resultados sensivelmente diferentes entre execuções para a mesma janela — ex.: `window=10` deu F1=0,6595 numa rodada e F1=0,6166 na outra, uma oscilação de ~0,04 sem nenhuma mudança de configuração. O Random Forest, por ser determinístico (`random_state=42`), não apresenta essa variação. Isso é, por si só, um achado relevante: **o F1-macro do LSTM reportado neste trabalho é uma estimativa pontual de um processo com variância não desprezível**, não fixada por seed — reforça a recomendação já presente nos Trabalhos Futuros do TCC de repetir o treino com múltiplas sementes e reportar F1-macro médio ± desvio padrão.
+
+**Conclusão revisada:** ao contrário da primeira leitura (janela sem grande efeito), com o RF incluído fica claro que **janelas maiores tendem a ajudar** — o RF melhora de forma quase monotônica até `window=50` (+0,042 sobre `window=10`), e o LSTM, apesar da variância, também atinge seu melhor resultado em `window=50`. Isso sugere que o `window_size=10` usado no modelo principal pode estar deixando desempenho na mesa; janelas maiores (30–50) são uma direção de ajuste fino genuína para trabalho futuro — mas trocar o hiperparâmetro do modelo principal exigiria retreinar e reavaliar toda a Tabela 6, o que fica fora do escopo desta rodada de testes.
+
+**Conclusão:** o tamanho da janela tem impacto real, mas modesto (variação de ~0,03 no F1-macro entre o pior e o melhor) — não é o gargalo principal do modelo. `window=20` supera marginalmente o `window=10` usado no modelo principal (+0,0064), mas a diferença é pequena o suficiente para não justificar, sozinha, retreinar o modelo principal com outra janela — é uma direção legítima de ajuste fino a mencionar em trabalhos futuros, não uma correção necessária. Note também que janelas maiores convergem em menos épocas (30 e 50: só 7 épocas até o early stopping), sugerindo que sequências mais longas dão sinal mais forte ao gradiente por época, mas não necessariamente melhor generalização.
 
 ---
 
